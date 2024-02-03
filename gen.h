@@ -527,9 +527,9 @@ genArithBlock("cmp", 0x38);
 #define gen86_pause(p_pc) (_gen86_putb(p_pc, 0xf3), _gen86_putb(p_pc, 0x90))
 
 #if LIBGEN86_TARGET_BITS == 64
-#define gen86_xchgw_r_ax(p_pc, reg)  /* xchgw %reg, %ax  */ (_gen86_pfx16_(p_pc) !((reg) & 8) || (_gen86_putb(p_pc, 0x40 | GEN86_REX_B), 0), _gen86_putb(p_pc, 0x90 + (reg)&7))
-#define gen86_xchgl_r_eax(p_pc, reg) /* xchgl %reg, %eax */ (_gen86_pfx32_(p_pc) !((reg) & 8) || (_gen86_putb(p_pc, 0x40 | GEN86_REX_B), 0), _gen86_putb(p_pc, 0x90 + (reg)&7))
-#define gen86_xchgq_r_rax(p_pc, reg) /* xchgq %reg, %rax */ (_gen86_putb(p_pc, 0x40 | ((reg) & 8 ? GEN86_REX_B : 0) | GEN86_REX_W), _gen86_putb(p_pc, 0x90 + (reg)&7))
+#define gen86_xchgw_r_ax(p_pc, reg)  /* xchgw %reg, %ax  */ (_gen86_pfx16_(p_pc) !((reg) & 8) || (_gen86_putb(p_pc, 0x40 | GEN86_REX_B), 0), _gen86_putb(p_pc, 0x90 + ((reg)&7)))
+#define gen86_xchgl_r_eax(p_pc, reg) /* xchgl %reg, %eax */ (_gen86_pfx32_(p_pc) !((reg) & 8) || (_gen86_putb(p_pc, 0x40 | GEN86_REX_B), 0), _gen86_putb(p_pc, 0x90 + ((reg)&7)))
+#define gen86_xchgq_r_rax(p_pc, reg) /* xchgq %reg, %rax */ (_gen86_putb(p_pc, 0x40 | (((reg) & 8) ? GEN86_REX_B : 0) | GEN86_REX_W), _gen86_putb(p_pc, 0x90 + ((reg)&7)))
 #else /* LIBGEN86_TARGET_BITS == 64 */
 #define gen86_xchgw_r_ax(p_pc, reg)  /* xchgw %reg, %ax  */ (_gen86_pfx16_(p_pc) _gen86_putb(p_pc, 0x90 + (reg)))
 #define gen86_xchgl_r_eax(p_pc, reg) /* xchgl %reg, %eax */ (_gen86_pfx32_(p_pc) _gen86_putb(p_pc, 0x90 + (reg)))
@@ -618,10 +618,10 @@ genArithBlock("cmp", 0x38);
 
 
 #if LIBGEN86_TARGET_BITS == 64
-#define gen86_movb_imm_r(p_pc, imm, reg)   /* movb   $imm, %reg */ (!((reg) & 0x18) || (_gen86_putb(p_pc, 0x40 | ((reg)&8 ? GEN86_REX_B : 0)), 0), _gen86_putb(p_pc, 0xb0 + (reg)&7), _gen86_putb(p_pc, imm))
-#define gen86_movw_imm_r(p_pc, imm, reg)   /* movw   $imm, %reg */ (_gen86_pfx16_(p_pc) !((reg) & 8) || (_gen86_putb(p_pc, 0x40 | GEN86_REX_B), 0), _gen86_putb(p_pc, 0xb8 + (reg)&7), _gen86_putw(p_pc, imm))
-#define gen86_movl_imm_r(p_pc, imm, reg)   /* movl   $imm, %reg */ (_gen86_pfx32_(p_pc) !((reg) & 8) || (_gen86_putb(p_pc, 0x40 | GEN86_REX_B), 0), _gen86_putb(p_pc, 0xb8 + (reg)&7), _gen86_putl(p_pc, imm))
-#define gen86_movabs_imm_r(p_pc, imm, reg) /* movabs $imm, %reg */ (_gen86_putb(p_pc, 0x40 | GEN86_REX_W | ((reg)&8 ? GEN86_REX_B : 0)), _gen86_putb(p_pc, 0xb8 + (reg)&7), _gen86_putq(p_pc, imm))
+#define gen86_movb_imm_r(p_pc, imm, reg)   /* movb   $imm, %reg */ (!((reg) & 0x18) || (_gen86_putb(p_pc, 0x40 | (((reg)&8) ? GEN86_REX_B : 0)), 0), _gen86_putb(p_pc, 0xb0 + ((reg)&7)), _gen86_putb(p_pc, imm))
+#define gen86_movw_imm_r(p_pc, imm, reg)   /* movw   $imm, %reg */ (_gen86_pfx16_(p_pc) !((reg) & 8) || (_gen86_putb(p_pc, 0x40 | GEN86_REX_B), 0), _gen86_putb(p_pc, 0xb8 + ((reg)&7)), _gen86_putw(p_pc, imm))
+#define gen86_movl_imm_r(p_pc, imm, reg)   /* movl   $imm, %reg */ (_gen86_pfx32_(p_pc) !((reg) & 8) || (_gen86_putb(p_pc, 0x40 | GEN86_REX_B), 0), _gen86_putb(p_pc, 0xb8 + ((reg)&7)), _gen86_putl(p_pc, imm))
+#define gen86_movabs_imm_r(p_pc, imm, reg) /* movabs $imm, %reg */ (_gen86_putb(p_pc, 0x40 | GEN86_REX_W | (((reg)&8) ? GEN86_REX_B : 0)), _gen86_putb(p_pc, 0xb8 + ((reg)&7)), _gen86_putq(p_pc, imm))
 #define gen86_movq_imm_r(p_pc, imm, reg)                                                   \
 	(_gen86_fitsl(imm)                                                                     \
 	 ? gen86_movq_imm_mod(p_pc, gen86_modrm_r, (__INT32_TYPE__)(__INT64_TYPE__)(imm), reg) \
@@ -1314,8 +1314,8 @@ genShift("sar", 7);
 #endif /* LIBGEN86_TARGET_BITS != 64 */
 
 #if LIBGEN86_TARGET_BITS == 64
-#define gen86_bswapl(p_pc, reg) /* bswapl %reg */ (!((reg) & 8) || (_gen86_putb(p_pc, 0x40 | GEN86_REX_B), 0), _gen86_putb2(p_pc, 0xf0, 0xc8 + (reg)&7))
-#define gen86_bswapq(p_pc, reg) /* bswapq %reg */ (_gen86_putb(p_pc, 0x40 | GEN86_REX_W | ((reg) & 8 ? GEN86_REX_B : 0)), _gen86_putb2(p_pc, 0xf0, 0xc8 + (reg)&7))
+#define gen86_bswapl(p_pc, reg) /* bswapl %reg */ (!((reg) & 8) || (_gen86_putb(p_pc, 0x40 | GEN86_REX_B), 0), _gen86_putb2(p_pc, 0xf0, 0xc8 + ((reg)&7)))
+#define gen86_bswapq(p_pc, reg) /* bswapq %reg */ (_gen86_putb(p_pc, 0x40 | GEN86_REX_W | (((reg) & 8) ? GEN86_REX_B : 0)), _gen86_putb2(p_pc, 0xf0, 0xc8 + ((reg)&7)))
 #else /* LIBGEN86_TARGET_BITS == 64 */
 #define gen86_bswapl(p_pc, reg) /* bswapl %reg */ _gen86_putb2(p_pc, 0xf0, 0xc8 + (reg))
 #endif /* LIBGEN86_TARGET_BITS != 64 */
