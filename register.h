@@ -290,7 +290,7 @@
  */
 
 /* NOTE: All `gen86_modrm_*' macros must be callable like:
- *   gen86_modrm_*(p_pc, _rex, _putinstr, reg, ..., _putimm)
+ *   gen86_modrm_*(p_pc, _rex, _putinstr, reg, ..., _putimm, _immsiz)
  * With:
  *   - `byte_t **p_pc'   -- Output buffer
  *   - `uint8_t _rex'    -- Ignored on non-64-bit; either `0' or `GEN86_REX_W'
@@ -299,44 +299,40 @@
  *   - `...'             -- Variable # of arguments (at least 1), based
  *                          on which  modrm  encoding  is  being  used.
  *   - `_putimm'         -- Expands to code which generates immediate operands
+ *   - `_immsiz'         -- Number of bytes written by `_putimm'
  */
 
 
 /* <instr> %reg, %rm */
 #define gen86_modrm_r(args) _gen86_modrm_r args
-#define _gen86_modrm_r(p_pc, _rex, _putinstr, reg, rm, _putimm)    \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, rm, 0) _putinstr, \
+#define _gen86_modrm_r(p_pc, _rex, _putinstr, reg, rm, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, rm, 0) _putinstr,       \
 	                _gen86_modrm(p_pc, 3, reg, rm), _putimm)
 
 
 #if LIBGEN86_TARGET_BITS == 64
+/* <instr> %reg, ipoff32s(%rip) */
+#define gen86_modrm_prel(args) _gen86_modrm_p args
+#define _gen86_modrm_prel(p_pc, _rex, _putinstr, reg, ipoff32s, _putimm, _immsiz)  \
+	(_gen86_rex_(p_pc, _rex, reg, 0, 0), _putinstr, _gen86_modrm(p_pc, 0, reg, 5), \
+	 _gen86_putsl(p_pc, ipoff32s), _putimm)
+
 /* <instr> %reg, disp    # Address of `disp'  is encoded  PC-relative
  *                       # to the proper location offset from `*p_pc' */
 #define gen86_modrm_p(args) _gen86_modrm_p args
-#define _gen86_modrm_p(p_pc, _rex, _putinstr, reg, disp, _putimm)   \
-	__XBLOCK({                                                      \
-		__BYTE_TYPE__ *__g86_disp_ptr;                              \
-		_gen86_rex_(p_pc, _rex, reg, 0, 0);                         \
-		_putinstr;                                                  \
-		_gen86_modrm(p_pc, 0, reg, 5);                              \
-		__g86_disp_ptr = *(p_pc);                                   \
-		*(p_pc) += 4;                                               \
-		_putimm;                                                    \
-		__hybrid_unaligned_set32(__g86_disp_ptr,                    \
-		                         (__UINT32_TYPE__)(__INT32_TYPE__)  \
-		                         (__INTPTR_TYPE__)                  \
-		                         ((__UINTPTR_TYPE__)(disp) -        \
-		                          (__UINTPTR_TYPE__)*(p_pc)));      \
-		_gen86_noop;                                                \
-	})
+#define _gen86_modrm_p(p_pc, _rex, _putinstr, reg, disp, _putimm, _immsiz)               \
+	(_gen86_rex_(p_pc, _rex, reg, 0, 0), _putinstr, _gen86_modrm(p_pc, 0, reg, 5),       \
+	 _gen86_putsl(p_pc, (__INTPTR_TYPE__)((__UINTPTR_TYPE__)(disp) -                     \
+	                                      ((__UINTPTR_TYPE__)*(p_pc) + 4 + (_immsiz)))), \
+	 _putimm)
 #endif /* LIBGEN86_TARGET_BITS == 64 */
 
 
 /* <instr> %reg, disp16  # NOTE: `disp16' is unsigned! */
 #define gen86_modrm16_d(args) _gen86_modrm16_d args
-#define _gen86_modrm16_d(p_pc, _rex, _putinstr, reg, disp16, _putimm)         \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, 0, 0) _putinstr,             \
-	                _gen86_modrm(p_pc, 0, reg, 6), _gen86_putw(p_pc, disp16), \
+#define _gen86_modrm16_d(p_pc, _rex, _putinstr, reg, disp16, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, 0, 0) _putinstr,              \
+	                _gen86_modrm(p_pc, 0, reg, 6), _gen86_putw(p_pc, disp16),  \
 	                _putimm)
 
 
@@ -345,14 +341,14 @@
 /* <instr> %reg, disp32s  # NOTE: `disp32s' is signed! */
 #define gen86_modrm32_d(args) _gen86_modrm32_d args
 #if LIBGEN86_TARGET_BITS == 64
-#define _gen86_modrm32_d(p_pc, _rex, _putinstr, reg, disp32s, _putimm) \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, 0, 0) _putinstr,      \
-	                _gen86_modrm(p_pc, 0, reg, 4),                     \
-	                _gen86_modrm(p_pc, 0, 4, 5), /* SIB */             \
-	                _gen86_putsl(p_pc, disp32s),                       \
+#define _gen86_modrm32_d(p_pc, _rex, _putinstr, reg, disp32s, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, 0, 0) _putinstr,               \
+	                _gen86_modrm(p_pc, 0, reg, 4),                              \
+	                _gen86_modrm(p_pc, 0, 4, 5), /* SIB */                      \
+	                _gen86_putsl(p_pc, disp32s),                                \
 	                _putimm)
 #else /* LIBGEN86_TARGET_BITS == 64 */
-#define _gen86_modrm32_d(p_pc, _rex, _putinstr, reg, disp32s, _putimm)          \
+#define _gen86_modrm32_d(p_pc, _rex, _putinstr, reg, disp32s, _putimm, _immsiz) \
 	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, 0, 0) _putinstr,               \
 	                _gen86_modrm(p_pc, 0, reg, 5), _gen86_putsl(p_pc, disp32s), \
 	                _putimm)
@@ -363,11 +359,11 @@
 /* <instr> %reg, disp */
 #define gen86_modrm_d(args) _gen86_modrm_d args
 #if LIBGEN86_TARGET_BITS == 16
-#define _gen86_modrm_d(p_pc, _rex, _putinstr, reg, disp, _putimm) \
-	_gen86_modrm16_d(p_pc, _rex, _putinstr, reg, disp, _putimm)
+#define _gen86_modrm_d(p_pc, _rex, _putinstr, reg, disp, _putimm, _immsiz) \
+	_gen86_modrm16_d(p_pc, _rex, _putinstr, reg, disp, _putimm, _immsiz)
 #else /* LIBGEN86_TARGET_BITS == 16 */
-#define _gen86_modrm_d(p_pc, _rex, _putinstr, reg, disp, _putimm) \
-	_gen86_modrm32_d(p_pc, _rex, _putinstr, reg, disp, _putimm)
+#define _gen86_modrm_d(p_pc, _rex, _putinstr, reg, disp, _putimm, _immsiz) \
+	_gen86_modrm32_d(p_pc, _rex, _putinstr, reg, disp, _putimm, _immsiz)
 #endif /* LIBGEN86_TARGET_BITS != 16 */
 
 
@@ -379,7 +375,7 @@
 
 /* <instr> %reg, (%breg)   # `%breg' must be `%si', `%di', `%bp' or `%bx' */
 #define gen86_modrm16_b(args) _gen86_modrm16_b args
-#define _gen86_modrm16_b(p_pc, _rex, _putinstr, reg, breg, _putimm)                                    \
+#define _gen86_modrm16_b(p_pc, _rex, _putinstr, reg, breg, _putimm, _immsiz)                           \
 	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                                   \
 	                _gen86_regmsk(breg) == GEN86_R_BP                                                  \
 	                ? (_gen86_modrm(p_pc, 1, reg, 6), _gen86_putsb(p_pc, 0))                           \
@@ -390,15 +386,15 @@
 #if LIBGEN86_TARGET_BITS >= 32
 /* <instr> %reg, (%breg) */
 #define gen86_modrm32_b(args) _gen86_modrm32_b(args)
-#define _gen86_modrm32_b(p_pc, _rex, _putinstr, reg, breg, _putimm)  \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr, \
-	                _gen86_regmsk(breg) == GEN86_R_EBP               \
-	                ? (_gen86_modrm(p_pc, 1, reg, GEN86_R_EBP),      \
-	                   _gen86_putsb(p_pc, 0))                        \
-	                : _gen86_regmsk(breg) == GEN86_R_ESP             \
-	                  ? (_gen86_modrm(p_pc, 0, reg, 4),              \
-	                     _gen86_modrm(p_pc, 0, 4, GEN86_R_ESP))      \
-	                  : _gen86_modrm(p_pc, 0, reg, breg),            \
+#define _gen86_modrm32_b(p_pc, _rex, _putinstr, reg, breg, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,         \
+	                _gen86_regmsk(breg) == GEN86_R_EBP                       \
+	                ? (_gen86_modrm(p_pc, 1, reg, GEN86_R_EBP),              \
+	                   _gen86_putsb(p_pc, 0))                                \
+	                : _gen86_regmsk(breg) == GEN86_R_ESP                     \
+	                  ? (_gen86_modrm(p_pc, 0, reg, 4),                      \
+	                     _gen86_modrm(p_pc, 0, 4, GEN86_R_ESP))              \
+	                  : _gen86_modrm(p_pc, 0, reg, breg),                    \
 	                _putimm)
 #endif /* LIBGEN86_TARGET_BITS >= 32 */
 
@@ -407,68 +403,68 @@
 /* <instr> %reg, (%breg) */
 #define gen86_modrm_b(args) _gen86_modrm_b args
 #if LIBGEN86_TARGET_BITS == 16
-#define _gen86_modrm_b(p_pc, _rex, _putinstr, reg, breg, _putimm) \
-	_gen86_modrm16_b(p_pc, _rex, _putinstr, reg, breg, _putimm)
+#define _gen86_modrm_b(p_pc, _rex, _putinstr, reg, breg, _putimm, _immsiz) \
+	_gen86_modrm16_b(p_pc, _rex, _putinstr, reg, breg, _putimm, _immsiz)
 #else /* LIBGEN86_TARGET_BITS == 16 */
-#define _gen86_modrm_b(p_pc, _rex, _putinstr, reg, breg, _putimm) \
-	_gen86_modrm32_b(p_pc, _rex, _putinstr, reg, breg, _putimm)
+#define _gen86_modrm_b(p_pc, _rex, _putinstr, reg, breg, _putimm, _immsiz) \
+	_gen86_modrm32_b(p_pc, _rex, _putinstr, reg, breg, _putimm, _immsiz)
 #endif /* LIBGEN86_TARGET_BITS != 16 */
 
 
 /* <instr> %reg, disp8s(%breg)   # `disp8s' must `int8_t' */
 #define gen86_modrm16_d8b(args) _gen86_modrm16_d8b args
-#define _gen86_modrm16_d8b(p_pc, _rex, _putinstr, reg, disp8s, breg, _putimm)    \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,             \
-	                _gen86_modrm(p_pc, 1, reg, _gen86_modrm16_b_rmofbreg(breg)), \
+#define _gen86_modrm16_d8b(p_pc, _rex, _putinstr, reg, disp8s, breg, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                   \
+	                _gen86_modrm(p_pc, 1, reg, _gen86_modrm16_b_rmofbreg(breg)),       \
 	                _gen86_putsb(p_pc, disp8s), _putimm)
 
 /* <instr> %reg, disp16(%breg)   # `disp16' must `uint16_t' */
 #define gen86_modrm16_d16b(args) _gen86_modrm16_d16b args
-#define _gen86_modrm16_d16b(p_pc, _rex, _putinstr, reg, disp16, breg, _putimm)   \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,             \
-	                _gen86_modrm(p_pc, 2, reg, _gen86_modrm16_b_rmofbreg(breg)), \
+#define _gen86_modrm16_d16b(p_pc, _rex, _putinstr, reg, disp16, breg, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                    \
+	                _gen86_modrm(p_pc, 2, reg, _gen86_modrm16_b_rmofbreg(breg)),        \
 	                _gen86_putw(p_pc, disp16), _putimm)
 
 /* <instr> %reg, disp(%breg)     # Autoselect optimal encoding for `disp' */
 #define gen86_modrm16_db(args) _gen86_modrm16_db args
-#define _gen86_modrm16_db(p_pc, _rex, _putinstr, reg, disp, breg, _putimm)     \
-	(_gen86_fitsb(disp)                                                        \
-	 ? ((disp) == 0                                                            \
-	    ? _gen86_modrm16_b(p_pc, _rex, _putinstr, reg, breg, _putimm)          \
-	    : _gen86_modrm16_d8b(p_pc, _rex, _putinstr, reg, disp, breg, _putimm)) \
-	 : _gen86_modrm16_d16b(p_pc, _rex, _putinstr, reg, disp, breg, _putimm))
+#define _gen86_modrm16_db(p_pc, _rex, _putinstr, reg, disp, breg, _putimm, _immsiz)     \
+	(_gen86_fitsb(disp)                                                                 \
+	 ? ((disp) == 0                                                                     \
+	    ? _gen86_modrm16_b(p_pc, _rex, _putinstr, reg, breg, _putimm, _immsiz)          \
+	    : _gen86_modrm16_d8b(p_pc, _rex, _putinstr, reg, disp, breg, _putimm, _immsiz)) \
+	 : _gen86_modrm16_d16b(p_pc, _rex, _putinstr, reg, disp, breg, _putimm, _immsiz))
 
 
 
 #if LIBGEN86_TARGET_BITS >= 32
 /* <instr> %reg, disp8s(%breg)    # `disp8s' must `int8_t' */
 #define gen86_modrm32_d8b(args) _gen86_modrm32_d8b args
-#define _gen86_modrm32_d8b(p_pc, _rex, _putinstr, reg, disp8s, breg, _putimm) \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,          \
-	                _gen86_regmsk(breg) == GEN86_R_ESP                        \
-	                ? (_gen86_modrm(p_pc, 1, reg, 4),                         \
-	                   _gen86_modrm(p_pc, 0, 4, GEN86_R_ESP))                 \
-	                : _gen86_modrm(p_pc, 1, reg, breg),                       \
+#define _gen86_modrm32_d8b(p_pc, _rex, _putinstr, reg, disp8s, breg, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                   \
+	                _gen86_regmsk(breg) == GEN86_R_ESP                                 \
+	                ? (_gen86_modrm(p_pc, 1, reg, 4),                                  \
+	                   _gen86_modrm(p_pc, 0, 4, GEN86_R_ESP))                          \
+	                : _gen86_modrm(p_pc, 1, reg, breg),                                \
 	                _gen86_putsb(p_pc, disp8s), _putimm)
 
 /* <instr> %reg, disp32s(%breg)   # `disp32s' must `int32_t' */
 #define gen86_modrm32_d32b(args) _gen86_modrm32_d32b args
-#define _gen86_modrm32_d32b(p_pc, _rex, _putinstr, reg, disp32s, breg, _putimm) \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,            \
-	                _gen86_regmsk(breg) == GEN86_R_ESP                          \
-	                ? (_gen86_modrm(p_pc, 2, reg, 4),                           \
-	                   _gen86_modrm(p_pc, 0, 4, GEN86_R_ESP))                   \
-	                : _gen86_modrm(p_pc, 2, reg, breg),                         \
+#define _gen86_modrm32_d32b(p_pc, _rex, _putinstr, reg, disp32s, breg, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                     \
+	                _gen86_regmsk(breg) == GEN86_R_ESP                                   \
+	                ? (_gen86_modrm(p_pc, 2, reg, 4),                                    \
+	                   _gen86_modrm(p_pc, 0, 4, GEN86_R_ESP))                            \
+	                : _gen86_modrm(p_pc, 2, reg, breg),                                  \
 	                _gen86_putsl(p_pc, disp32s), _putimm)
 
 /* <instr> %reg, disp32s(%breg)   # `disp32s' must `int32_t'; Autoselect optimal encoding for `disp' */
 #define gen86_modrm32_db(args) _gen86_modrm32_db args
-#define _gen86_modrm32_db(p_pc, _rex, _putinstr, reg, disp32s, breg, _putimm)     \
-	(_gen86_fitsb(disp32s)                                                        \
-	 ? ((disp32s) == 0                                                            \
-	    ? _gen86_modrm32_b(p_pc, _rex, _putinstr, reg, breg, _putimm)             \
-	    : _gen86_modrm32_d8b(p_pc, _rex, _putinstr, reg, disp32s, breg, _putimm)) \
-	 : _gen86_modrm32_d32b(p_pc, _rex, _putinstr, reg, disp32s, breg, _putimm))
+#define _gen86_modrm32_db(p_pc, _rex, _putinstr, reg, disp32s, breg, _putimm, _immsiz)     \
+	(_gen86_fitsb(disp32s)                                                                 \
+	 ? ((disp32s) == 0                                                                     \
+	    ? _gen86_modrm32_b(p_pc, _rex, _putinstr, reg, breg, _putimm, _immsiz)             \
+	    : _gen86_modrm32_d8b(p_pc, _rex, _putinstr, reg, disp32s, breg, _putimm, _immsiz)) \
+	 : _gen86_modrm32_d32b(p_pc, _rex, _putinstr, reg, disp32s, breg, _putimm, _immsiz))
 #endif /* LIBGEN86_TARGET_BITS >= 32 */
 
 
@@ -476,21 +472,21 @@
 /* <instr> %reg, disp8s(%breg)    # `disp8s' must `int8_t' */
 #define gen86_modrm_d8b(args) _gen86_modrm_d8b args
 #if LIBGEN86_TARGET_BITS == 16
-#define _gen86_modrm_d8b(p_pc, _rex, _putinstr, reg, disp8s, breg, _putimm) \
-	_gen86_modrm16_d8b(p_pc, _rex, _putinstr, reg, disp8s, breg, _putimm)
+#define _gen86_modrm_d8b(p_pc, _rex, _putinstr, reg, disp8s, breg, _putimm, _immsiz) \
+	_gen86_modrm16_d8b(p_pc, _rex, _putinstr, reg, disp8s, breg, _putimm, _immsiz)
 #else /* LIBGEN86_TARGET_BITS == 16 */
-#define _gen86_modrm_d8b(p_pc, _rex, _putinstr, reg, disp8s, breg, _putimm) \
-	_gen86_modrm32_d8b(p_pc, _rex, _putinstr, reg, disp8s, breg, _putimm)
+#define _gen86_modrm_d8b(p_pc, _rex, _putinstr, reg, disp8s, breg, _putimm, _immsiz) \
+	_gen86_modrm32_d8b(p_pc, _rex, _putinstr, reg, disp8s, breg, _putimm, _immsiz)
 #endif /* LIBGEN86_TARGET_BITS != 16 */
 
 /* <instr> %reg, disps(%breg)    # `disps' must `int16_t' (in 16-bit mode) or `int32_t' */
 #define gen86_modrm_db(args) _gen86_modrm_db args
 #if LIBGEN86_TARGET_BITS == 16
-#define _gen86_modrm_db(p_pc, _rex, _putinstr, reg, disps, breg, _putimm) \
-	_gen86_modrm16_db(p_pc, _rex, _putinstr, reg, disps, breg, _putimm)
+#define _gen86_modrm_db(p_pc, _rex, _putinstr, reg, disps, breg, _putimm, _immsiz) \
+	_gen86_modrm16_db(p_pc, _rex, _putinstr, reg, disps, breg, _putimm, _immsiz)
 #else /* LIBGEN86_TARGET_BITS == 16 */
-#define _gen86_modrm_db(p_pc, _rex, _putinstr, reg, disps, breg, _putimm) \
-	_gen86_modrm32_db(p_pc, _rex, _putinstr, reg, disps, breg, _putimm)
+#define _gen86_modrm_db(p_pc, _rex, _putinstr, reg, disps, breg, _putimm, _immsiz) \
+	_gen86_modrm32_db(p_pc, _rex, _putinstr, reg, disps, breg, _putimm, _immsiz)
 #endif /* LIBGEN86_TARGET_BITS != 16 */
 
 
@@ -505,33 +501,33 @@
 
 /* <instr> %reg, (%breg,%index)  # `breg' and `index' must be pairs of [bx,si], [bx,di], [bp,si] or [bp,di] */
 #define gen86_modrm16_bi(args) _gen86_modrm16_bi args
-#define _gen86_modrm16_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm)              \
+#define _gen86_modrm16_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm, _immsiz)     \
 	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                     \
 	                _gen86_modrm(p_pc, 0, reg, _gen86_modrm16_bi_rmofbreg(breg, index)), \
 	                _putimm)
 
 /* <instr> %reg, disp8s(%breg,%index)  # `breg' and `index' must be pairs of [bx,si], [bx,di], [bp,si] or [bp,di] */
 #define gen86_modrm16_d8bi(args) _gen86_modrm16_d8bi args
-#define _gen86_modrm16_d8bi(p_pc, _rex, _putinstr, reg, disp8s, breg, index, _putimm)    \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                     \
-	                _gen86_modrm(p_pc, 1, reg, _gen86_modrm16_bi_rmofbreg(breg, index)), \
+#define _gen86_modrm16_d8bi(p_pc, _rex, _putinstr, reg, disp8s, breg, index, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                           \
+	                _gen86_modrm(p_pc, 1, reg, _gen86_modrm16_bi_rmofbreg(breg, index)),       \
 	                _gen86_putsb(p_pc, disp8s), _putimm)
 
 /* <instr> %reg, disp16(%breg,%index)  # `breg' and `index' must be pairs of [bx,si], [bx,di], [bp,si] or [bp,di] */
 #define gen86_modrm16_d16bi(args) _gen86_modrm16_d16bi args
-#define _gen86_modrm16_d16bi(p_pc, _rex, _putinstr, reg, disp16, breg, index, _putimm)   \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                     \
-	                _gen86_modrm(p_pc, 2, reg, _gen86_modrm16_bi_rmofbreg(breg, index)), \
+#define _gen86_modrm16_d16bi(p_pc, _rex, _putinstr, reg, disp16, breg, index, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                            \
+	                _gen86_modrm(p_pc, 2, reg, _gen86_modrm16_bi_rmofbreg(breg, index)),        \
 	                _gen86_putw(p_pc, disp16), _putimm)
 
 /* <instr> %reg, disp(%breg,%index)    # Autoselect optimal encoding for `disp' */
 #define gen86_modrm16_dbi(args) _gen86_modrm16_dbi args
-#define _gen86_modrm16_dbi(p_pc, _rex, _putinstr, reg, disp, breg, index, _putimm)     \
-	(_gen86_fitsb(disp)                                                                \
-	 ? ((disp) == 0                                                                    \
-	    ? _gen86_modrm16_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm)          \
-	    : _gen86_modrm16_d8bi(p_pc, _rex, _putinstr, reg, disp, breg, index, _putimm)) \
-	 : _gen86_modrm16_d16bi(p_pc, _rex, _putinstr, reg, disp, breg, index, _putimm))
+#define _gen86_modrm16_dbi(p_pc, _rex, _putinstr, reg, disp, breg, index, _putimm, _immsiz)     \
+	(_gen86_fitsb(disp)                                                                         \
+	 ? ((disp) == 0                                                                             \
+	    ? _gen86_modrm16_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm, _immsiz)          \
+	    : _gen86_modrm16_d8bi(p_pc, _rex, _putinstr, reg, disp, breg, index, _putimm, _immsiz)) \
+	 : _gen86_modrm16_d16bi(p_pc, _rex, _putinstr, reg, disp, breg, index, _putimm, _immsiz))
 
 
 
@@ -539,23 +535,23 @@
 
 /* <instr> %reg, (%breg,%index) */
 #define gen86_modrm32_bi(args) _gen86_modrm32_bi args
-#define _gen86_modrm32_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm) \
-	_gen86_modrm32_bis(p_pc, _rex, _putinstr, reg, breg, index, 1, _putimm)
+#define _gen86_modrm32_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm, _immsiz) \
+	_gen86_modrm32_bis(p_pc, _rex, _putinstr, reg, breg, index, 1, _putimm, _immsiz)
 
 /* <instr> %reg, disp8s(%breg,%index) */
 #define gen86_modrm32_d8bi(args) _gen86_modrm32_d8bi args
-#define _gen86_modrm32_d8bi(p_pc, _rex, _putinstr, reg, disp8s, breg, index, _putimm) \
-	_gen86_modrm32_d8bis(p_pc, _rex, _putinstr, reg, disp8s, breg, index, 1, _putimm)
+#define _gen86_modrm32_d8bi(p_pc, _rex, _putinstr, reg, disp8s, breg, index, _putimm, _immsiz) \
+	_gen86_modrm32_d8bis(p_pc, _rex, _putinstr, reg, disp8s, breg, index, 1, _putimm, _immsiz)
 
 /* <instr> %reg, disp32s(,%index) */
 #define gen86_modrm32_d32i(args) _gen86_modrm32_d32i args
-#define _gen86_modrm32_d32i(p_pc, _rex, _putinstr, reg, disp32s, index, _putimm) \
-	_gen86_modrm32_d32is(p_pc, _rex, _putinstr, reg, disp32s, index, 1, _putimm)
+#define _gen86_modrm32_d32i(p_pc, _rex, _putinstr, reg, disp32s, index, _putimm, _immsiz) \
+	_gen86_modrm32_d32is(p_pc, _rex, _putinstr, reg, disp32s, index, 1, _putimm, _immsiz)
 
 /* <instr> %reg, disp32s(%breg,%index) */
 #define gen86_modrm32_d32bi(args) _gen86_modrm32_d32bi args
-#define _gen86_modrm32_d32bi(p_pc, _rex, _putinstr, reg, disp32s, breg, index, _putimm) \
-	_gen86_modrm32_d32bis(p_pc, _rex, _putinstr, reg, disp32s, breg, index, 1, _putimm)
+#define _gen86_modrm32_d32bi(p_pc, _rex, _putinstr, reg, disp32s, breg, index, _putimm, _immsiz) \
+	_gen86_modrm32_d32bis(p_pc, _rex, _putinstr, reg, disp32s, breg, index, 1, _putimm, _immsiz)
 
 #define _gen86_modrm32_scaleval(scale) \
 	((scale) == 1 ? 0 : (scale) == 2 ? 1 : (scale) == 4 ? 2 : (scale) == 8 ? 3 : (__builtin_unreachable(), 0))
@@ -563,7 +559,7 @@
 
 /* <instr> %reg, (%breg,%index,scale) */
 #define gen86_modrm32_bis(args) _gen86_modrm32_bis args
-#define _gen86_modrm32_bis(p_pc, _rex, _putinstr, reg, breg, index, scale, _putimm)                  \
+#define _gen86_modrm32_bis(p_pc, _rex, _putinstr, reg, breg, index, scale, _putimm, _immsiz)         \
 	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                                 \
 	                (breg) == 5 ? (_gen86_modrm(p_pc, 1, reg, 4),                                    \
 	                               _gen86_modrm(p_pc, _gen86_modrm32_scaleval(scale), index, 5),     \
@@ -574,51 +570,51 @@
 
 /* <instr> %reg, disp8s(%breg,%index,scale) */
 #define gen86_modrm32_d8bis(args) _gen86_modrm32_d8bis args
-#define _gen86_modrm32_d8bis(p_pc, _rex, _putinstr, reg, disp8s, breg, index, scale, _putimm) \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                          \
-	                _gen86_modrm(p_pc, 1, reg, 4),                                            \
-	                _gen86_modrm(p_pc, _gen86_modrm32_scaleval(scale), index, breg),          \
+#define _gen86_modrm32_d8bis(p_pc, _rex, _putinstr, reg, disp8s, breg, index, scale, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                                   \
+	                _gen86_modrm(p_pc, 1, reg, 4),                                                     \
+	                _gen86_modrm(p_pc, _gen86_modrm32_scaleval(scale), index, breg),                   \
 	                _gen86_putsb(p_pc, disp8s), _putimm)
 
 /* <instr> %reg, disps(,%index,scale) */
 #define gen86_modrm32_d32is(args) _gen86_modrm32_d32is args
-#define _gen86_modrm32_d32is(p_pc, _rex, _putinstr, reg, disps, index, scale, _putimm) \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, 0, 0) _putinstr,                      \
-	                _gen86_modrm(p_pc, 0, reg, 4),                                     \
-	                _gen86_modrm(p_pc, _gen86_modrm32_scaleval(scale), index, 5),      \
-	                _gen86_putsl(p_pc, disps),                                         \
+#define _gen86_modrm32_d32is(p_pc, _rex, _putinstr, reg, disps, index, scale, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, 0, 0) _putinstr,                               \
+	                _gen86_modrm(p_pc, 0, reg, 4),                                              \
+	                _gen86_modrm(p_pc, _gen86_modrm32_scaleval(scale), index, 5),               \
+	                _gen86_putsl(p_pc, disps),                                                  \
 	                _putimm)
 
 /* <instr> %reg, disp32s(%breg,%index,scale) */
 #define gen86_modrm32_d32bis(args) _gen86_modrm32_d32bis args
-#define _gen86_modrm32_d32bis(p_pc, _rex, _putinstr, reg, disp32s, breg, index, scale, _putimm) \
-	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                            \
-	                _gen86_modrm(p_pc, 2, reg, 4),                                              \
-	                _gen86_modrm(p_pc, _gen86_modrm32_scaleval(scale), index, breg),            \
+#define _gen86_modrm32_d32bis(p_pc, _rex, _putinstr, reg, disp32s, breg, index, scale, _putimm, _immsiz) \
+	_gen86_voidcast(_gen86_rex_(p_pc, _rex, reg, breg, 0) _putinstr,                                     \
+	                _gen86_modrm(p_pc, 2, reg, 4),                                                       \
+	                _gen86_modrm(p_pc, _gen86_modrm32_scaleval(scale), index, breg),                     \
 	                _gen86_putsl(p_pc, disp32s), _putimm)
 
 /* <instr> %reg, disp(%breg,%index)    # Autoselect optimal encoding for `disp' */
 #define gen86_modrm32_dbi(args) _gen86_modrm32_dbi args
-#define _gen86_modrm32_dbi(p_pc, _rex, _putinstr, reg, disp, breg, index, _putimm)     \
-	(_gen86_fitsb(disp)                                                                \
-	 ? ((disp) == 0                                                                    \
-	    ? _gen86_modrm32_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm)          \
-	    : _gen86_modrm32_d8bi(p_pc, _rex, _putinstr, reg, disp, breg, index, _putimm)) \
-	 : _gen86_modrm32_d32bi(p_pc, _rex, _putinstr, reg, disp, breg, index, _putimm))
+#define _gen86_modrm32_dbi(p_pc, _rex, _putinstr, reg, disp, breg, index, _putimm, _immsiz)     \
+	(_gen86_fitsb(disp)                                                                         \
+	 ? ((disp) == 0                                                                             \
+	    ? _gen86_modrm32_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm, _immsiz)          \
+	    : _gen86_modrm32_d8bi(p_pc, _rex, _putinstr, reg, disp, breg, index, _putimm, _immsiz)) \
+	 : _gen86_modrm32_d32bi(p_pc, _rex, _putinstr, reg, disp, breg, index, _putimm, _immsiz))
 
 /* <instr> %reg, disp(,%index, scale)  # Autoselect optimal encoding for `disp' */
 #define gen86_modrm32_dis(args) _gen86_modrm32_dis args
-#define _gen86_modrm32_dis(p_pc, _rex, _putinstr, reg, disp, index, scale, _putimm) \
-	_gen86_modrm32_d32is(p_pc, _rex, _putinstr, reg, disp, index, scale, _putimm)
+#define _gen86_modrm32_dis(p_pc, _rex, _putinstr, reg, disp, index, scale, _putimm, _immsiz) \
+	_gen86_modrm32_d32is(p_pc, _rex, _putinstr, reg, disp, index, scale, _putimm, _immsiz)
 
 /* <instr> %reg, disp(%breg,%index, scale) # Autoselect optimal encoding for `disp' */
 #define gen86_modrm32_dbis(args) _gen86_modrm32_dbis args
-#define _gen86_modrm32_dbis(p_pc, _rex, _putinstr, reg, disp, breg, index, scale, _putimm)     \
-	(_gen86_fitsb(disp)                                                                        \
-	 ? ((disp) == 0                                                                            \
-	    ? _gen86_modrm32_bis(p_pc, _rex, _putinstr, reg, breg, index, scale, _putimm)          \
-	    : _gen86_modrm32_d8bis(p_pc, _rex, _putinstr, reg, disp, breg, index, scale, _putimm)) \
-	 : _gen86_modrm32_d32bis(p_pc, _rex, _putinstr, reg, disp, breg, index, scale, _putimm))
+#define _gen86_modrm32_dbis(p_pc, _rex, _putinstr, reg, disp, breg, index, scale, _putimm, _immsiz)     \
+	(_gen86_fitsb(disp)                                                                                 \
+	 ? ((disp) == 0                                                                                     \
+	    ? _gen86_modrm32_bis(p_pc, _rex, _putinstr, reg, breg, index, scale, _putimm, _immsiz)          \
+	    : _gen86_modrm32_d8bis(p_pc, _rex, _putinstr, reg, disp, breg, index, scale, _putimm, _immsiz)) \
+	 : _gen86_modrm32_d32bis(p_pc, _rex, _putinstr, reg, disp, breg, index, scale, _putimm, _immsiz))
 #endif /* LIBGEN86_TARGET_BITS >= 32 */
 
 
@@ -626,65 +622,65 @@
 /* <instr> %reg, (%breg,%index) */
 #define gen86_modrm_bi(args) _gen86_modrm_bi args
 #if LIBGEN86_TARGET_BITS == 16
-#define _gen86_modrm_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm) \
-	_gen86_modrm16_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm)
+#define _gen86_modrm_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm, _immsiz) \
+	_gen86_modrm16_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm, _immsiz)
 #else /* LIBGEN86_TARGET_BITS == 16 */
-#define _gen86_modrm_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm) \
-	_gen86_modrm32_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm)
+#define _gen86_modrm_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm, _immsiz) \
+	_gen86_modrm32_bi(p_pc, _rex, _putinstr, reg, breg, index, _putimm, _immsiz)
 #endif /* LIBGEN86_TARGET_BITS != 16 */
 
 /* <instr> %reg, disp8s(%breg,%index)   # `disp8s' must `int8_t' */
 #define gen86_modrm_d8bi(args) _gen86_modrm_d8bi args
 #if LIBGEN86_TARGET_BITS == 16
-#define _gen86_modrm_d8bi(p_pc, _rex, _putinstr, reg, disp8s, breg, index, _putimm) \
-	_gen86_modrm16_d8bi(p_pc, _rex, _putinstr, reg, disp8s, breg, index, _putimm)
+#define _gen86_modrm_d8bi(p_pc, _rex, _putinstr, reg, disp8s, breg, index, _putimm, _immsiz) \
+	_gen86_modrm16_d8bi(p_pc, _rex, _putinstr, reg, disp8s, breg, index, _putimm, _immsiz)
 #else /* LIBGEN86_TARGET_BITS == 16 */
-#define _gen86_modrm_d8bi(p_pc, _rex, _putinstr, reg, disp8s, breg, index, _putimm) \
-	_gen86_modrm32_d8bi(p_pc, _rex, _putinstr, reg, disp8s, breg, index, _putimm)
+#define _gen86_modrm_d8bi(p_pc, _rex, _putinstr, reg, disp8s, breg, index, _putimm, _immsiz) \
+	_gen86_modrm32_d8bi(p_pc, _rex, _putinstr, reg, disp8s, breg, index, _putimm, _immsiz)
 #endif /* LIBGEN86_TARGET_BITS != 16 */
 
 /* <instr> %reg, disps(%breg,%index)    # `disps' must `int16_t' (in 16-bit mode) or `int32_t' */
 #define gen86_modrm_dbi(args) _gen86_modrm_dbi args
 #if LIBGEN86_TARGET_BITS == 16
-#define _gen86_modrm_dbi(p_pc, _rex, _putinstr, reg, disps, breg, index, _putimm) \
-	_gen86_modrm16_dbi(p_pc, _rex, _putinstr, reg, disps, breg, index, _putimm)
+#define _gen86_modrm_dbi(p_pc, _rex, _putinstr, reg, disps, breg, index, _putimm, _immsiz) \
+	_gen86_modrm16_dbi(p_pc, _rex, _putinstr, reg, disps, breg, index, _putimm, _immsiz)
 #else /* LIBGEN86_TARGET_BITS == 16 */
-#define _gen86_modrm_dbi(p_pc, _rex, _putinstr, reg, disps, breg, index, _putimm) \
-	_gen86_modrm32_dbi(p_pc, _rex, _putinstr, reg, disps, breg, index, _putimm)
+#define _gen86_modrm_dbi(p_pc, _rex, _putinstr, reg, disps, breg, index, _putimm, _immsiz) \
+	_gen86_modrm32_dbi(p_pc, _rex, _putinstr, reg, disps, breg, index, _putimm, _immsiz)
 #endif /* LIBGEN86_TARGET_BITS != 16 */
 
 
 #if LIBGEN86_TARGET_BITS >= 32
 /* <instr> %reg, (%breg,%index,scale) */
 #define gen86_modrm_bis(args) _gen86_modrm_bis args
-#define _gen86_modrm_bis(p_pc, _rex, _putinstr, reg, breg, index, scale, _putimm) \
-	_gen86_modrm32_bis(p_pc, _rex, _putinstr, reg, breg, index, scale, _putimm)
+#define _gen86_modrm_bis(p_pc, _rex, _putinstr, reg, breg, index, scale, _putimm, _immsiz) \
+	_gen86_modrm32_bis(p_pc, _rex, _putinstr, reg, breg, index, scale, _putimm, _immsiz)
 
 /* <instr> %reg, disp8s(%breg,%index,scale)   # `disp8s' must `int8_t' */
 #define gen86_modrm_d8bis(args) _gen86_modrm_d8bis args
-#define _gen86_modrm_d8bis(p_pc, _rex, _putinstr, reg, disp8s, breg, index, scale, _putimm) \
-	_gen86_modrm32_d8bis(p_pc, _rex, _putinstr, reg, disp8s, breg, index, scale, _putimm)
+#define _gen86_modrm_d8bis(p_pc, _rex, _putinstr, reg, disp8s, breg, index, scale, _putimm, _immsiz) \
+	_gen86_modrm32_d8bis(p_pc, _rex, _putinstr, reg, disp8s, breg, index, scale, _putimm, _immsiz)
 
 /* <instr> %reg, disps(%breg,%index,scale) */
 #define gen86_modrm_dbis(args) _gen86_modrm_dbis args
-#define _gen86_modrm_dbis(p_pc, _rex, _putinstr, reg, disps, breg, index, scale, _putimm) \
-	_gen86_modrm32_dbis(p_pc, _rex, _putinstr, reg, disps, breg, index, scale, _putimm)
+#define _gen86_modrm_dbis(p_pc, _rex, _putinstr, reg, disps, breg, index, scale, _putimm, _immsiz) \
+	_gen86_modrm32_dbis(p_pc, _rex, _putinstr, reg, disps, breg, index, scale, _putimm, _immsiz)
 
 /* <instr> %reg, disps(,%index,scale) */
 #define gen86_modrm_dis(args) _gen86_modrm_dis args
-#define _gen86_modrm_dis(p_pc, _rex, _putinstr, reg, disps, index, scale, _putimm) \
-	_gen86_modrm32_dis(p_pc, _rex, _putinstr, reg, disps, index, scale, _putimm)
+#define _gen86_modrm_dis(p_pc, _rex, _putinstr, reg, disps, index, scale, _putimm, _immsiz) \
+	_gen86_modrm32_dis(p_pc, _rex, _putinstr, reg, disps, index, scale, _putimm, _immsiz)
 
 /* Index-only aliases */
 #define gen86_modrm_i(args)  _gen86_modrm_i args
 #define gen86_modrm_is(args) _gen86_modrm_is args
 #define gen86_modrm_di(args) _gen86_modrm_di args
-#define _gen86_modrm_i(p_pc, _rex, _putinstr, reg, index, _putimm) \
-	_gen86_modrm_dis(p_pc, _rex, _putinstr, reg, 0, index, 1, _putimm)
-#define _gen86_modrm_is(p_pc, _rex, _putinstr, reg, index, scale, _putimm) \
-	_gen86_modrm_dis(p_pc, _rex, _putinstr, reg, 0, index, scale, _putimm)
-#define _gen86_modrm_di(p_pc, _rex, _putinstr, reg, disps, index, _putimm) \
-	_gen86_modrm_dis(p_pc, _rex, _putinstr, reg, disps, index, 1, _putimm)
+#define _gen86_modrm_i(p_pc, _rex, _putinstr, reg, index, _putimm, _immsiz) \
+	_gen86_modrm_dis(p_pc, _rex, _putinstr, reg, 0, index, 1, _putimm, _immsiz)
+#define _gen86_modrm_is(p_pc, _rex, _putinstr, reg, index, scale, _putimm, _immsiz) \
+	_gen86_modrm_dis(p_pc, _rex, _putinstr, reg, 0, index, scale, _putimm, _immsiz)
+#define _gen86_modrm_di(p_pc, _rex, _putinstr, reg, disps, index, _putimm, _immsiz) \
+	_gen86_modrm_dis(p_pc, _rex, _putinstr, reg, disps, index, 1, _putimm, _immsiz)
 #endif /* LIBGEN86_TARGET_BITS >= 32 */
 
 
