@@ -522,6 +522,8 @@ genArithBlock("cmp", 0x38);
 #define GEN86_CC_G   15 /* Greater (signed) */
 #define GEN86_CC_NLE 15 /* Not Less or Equal (signed) */
 #define GEN86_CC_COUNT 16
+#define GEN86_CC_NOTBIT 1
+#define GEN86_CC_NOT(x) ((x) ^ 1)
 
 /* Conditional jumps
  * @param: cc: One of `GEN86_CC_*' */
