@@ -1417,7 +1417,7 @@ genShift("sar", 7);
 #define gen86_bswapl(p_pc, reg) /* bswapl %reg */ _gen86_putb2(p_pc, 0xf0, 0xc8 + (reg))
 #endif /* LIBGEN86_TARGET_BITS != 64 */
 
-#define gen86_ud0(p_pc) /* ud0 */ _gen86_putb2(0xf0, 0xff)
+#define gen86_ud0(p_pc) /* ud0 */ _gen86_putb2(p_pc, 0xf0, 0xff)
 
 
 
